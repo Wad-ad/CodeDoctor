@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 环境配置(含密钥,不要提交)
+.env
+
+# 前端
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+
+# 知识库向量索引缓存(运行时生成,不需要提交)
+chroma_db/
+.corpus_hash
+
+# 案例文档库(用户上传数据与索引指纹,运行时生成)
+uploads/
+.cases_fingerprint
+
+# IDE
+.idea/
+.vscode/
+
+# 测试运行产物(Chrome 测试缓存 / 截图 / 报告)
+tmp/chrome-*/
+tmp/shots/
+tmp/*-report.txt

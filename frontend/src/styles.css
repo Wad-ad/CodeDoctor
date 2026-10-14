@@ -1,0 +1,64 @@
+:root {
+  --bg: #f5f6f8;
+  --panel: #ffffff;
+  --border: #e5e7eb;
+  --text: #1f2430;
+  --text-2: #5b6472;
+  --text-3: #8a93a3;
+  --primary: #2f6fed;
+  --primary-dark: #2559c9;
+  --red: #e24b4a;
+  --red-bg: #fdf0ef;
+  --green: #1f9d55;
+  --green-bg: #edf9f1;
+  --amber: #b7791f;
+  --amber-bg: #fdf6e7;
+  --mono: 'Cascadia Code', Consolas, 'Courier New', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ------------------------------------------------------------------
+   Monaco 编辑器的报错行装饰(必须放在全局样式里,
+   因为 Monaco 渲染的 DOM 不在组件树内,scoped 样式够不到)
+   ------------------------------------------------------------------ */
+.cd-error-line {
+  background: rgba(226, 75, 74, 0.1);
+}
+
+.cd-error-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cd-error-glyph::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e24b4a;
+  box-shadow: 0 0 0 2px rgba(226, 75, 74, 0.18);
+}
+
+.cd-error-squiggly {
+  text-decoration: underline wavy #e24b4a;
+  text-underline-offset: 3px;
+}
