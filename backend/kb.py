@@ -6,6 +6,7 @@
 - L2 向量检索(兜底):bge-m3 + Chroma 持久化,只在 L1 未命中时启用;
   embedding 后端可切换:ollama(本地,默认)/ siliconflow(硅基流动云端,OpenAI 兼容);
 - 向量层不可用时静默降级为纯 L1,不影响核心链路。
+- 检索模式由 CD_KB_MODE 控制:auto(默认,L1 优先)/ vector(强制向量)/ l1(纯精确)。
 """
 
 import hashlib
@@ -47,20 +48,24 @@ def load_entries() -> list:
 
 def search(error: dict | None = None, timed_out: bool = False,
            stderr: str = "", code: str = "", top_k: int | None = None) -> list:
-    """分层检索入口:先 L1 精确,未命中才走 L2 向量。返回命中的条目列表。"""
+    """分层检索入口:默认先 L1、未命中才走 L2;CD_KB_MODE=vector 时强制走 L2。"""
     load_entries()
     k = top_k or config.KB_TOP_K
 
     etype = "__timeout__" if timed_out else (error or {}).get("type")
     message = (error or {}).get("message") or ""
 
-    hits = _l1_search(etype, message)
-    if hits:
-        return hits[:k]
+    if config.KB_MODE != "vector":
+        hits = _l1_search(etype, message)
+        if hits:
+            return hits[:k]
+        if config.KB_MODE == "l1" or not config.KB_VECTOR:
+            return []
 
-    if config.KB_VECTOR:
-        hits = _l2_search(build_query(error, timed_out, stderr, code), k)
-    return hits[:k]
+    # 走到这里:auto 模式下 L1 未命中,或 vector 模式(强制向量,不再回退 L1)
+    if not config.KB_VECTOR:
+        return []
+    return _l2_search(build_query(error, timed_out, stderr, code), k)
 
 
 def _l1_search(etype: str | None, message: str) -> list:
@@ -68,7 +73,10 @@ def _l1_search(etype: str | None, message: str) -> list:
 
     规则:有具体正则命中的条目优先;都没有命中时才用该类型的兜底条目
     (message_patterns 为空)。类型没有收录则返回空,交给 L2。
+
+    自带语料加载:供 graph 分诊等外部调用方直接使用,不依赖调用顺序。
     """
+    load_entries()
     if not etype:
         return []
     same = _by_type.get(etype) or []
@@ -212,7 +220,11 @@ def _get_vectorstore():
 
 
 def _l2_search(query: str, k: int) -> list:
-    """L2 向量检索:语义相似 top-k;距离阈值外的结果丢弃,宁缺毋滥。"""
+    """L2 向量检索:语义相似 top-k;距离阈值外的结果丢弃,宁缺毋滥。
+
+    自带语料加载:命中的 doc 要靠 _by_id 还原成条目,否则会被整体丢弃。
+    """
+    load_entries()
     store = _get_vectorstore()
     if store is None or not query.strip():
         return []

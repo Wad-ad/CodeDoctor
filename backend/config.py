@@ -33,6 +33,14 @@ KB_TOP_K = int(os.getenv("CD_KB_TOP_K", "3"))
 KB_VECTOR = os.getenv("CD_KB_VECTOR", "1") != "0"          # 置 0 可关闭向量检索(纯 L1)
 KB_MAX_DISTANCE = float(os.getenv("CD_KB_MAX_DISTANCE", "0.45"))  # 向量距离上限,超出丢弃
 
+# 知识库检索模式:
+#   auto   = L1 精确优先,未命中才走 L2(默认)
+#   vector = 跳过 L1,每次都走向量检索;向量不可用时自动回退 L1
+#   l1     = 只用 L1,不走向量
+KB_MODE = os.getenv("CD_KB_MODE", "auto").strip().lower()
+if KB_MODE not in ("auto", "vector", "l1"):
+    KB_MODE = "auto"
+
 # 案例文档库(RAG):用户上传文档的语义检索参数
 CASE_TOP_K = int(os.getenv("CD_CASE_TOP_K", "2"))
 CASE_MAX_DISTANCE = float(os.getenv("CD_CASE_MAX_DISTANCE", "0.55"))  # 案例距离上限(内容更杂,略放宽)

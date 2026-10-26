@@ -73,6 +73,7 @@
               <span class="tag tag-stream">
                 <i class="pulse-dot"></i>{{ stream.msg }}
               </span>
+              <span v-if="streamTriageLabel" class="tag tag-triage">{{ streamTriageLabel }}</span>
               <span v-if="stream.round > 1" class="tag tag-round">第 {{ stream.round }} 轮</span>
             </div>
 
@@ -103,7 +104,7 @@
             </div>
             <div v-if="stream.fixed_code" class="block">
               <div class="block-title">修复后的代码</div>
-              <pre class="terminal fixed">{{ stream.fixed_code }}</pre>
+              <pre class="terminal fixed">{{ stripFence(stream.fixed_code) }}</pre>
             </div>
           </div>
 
@@ -119,6 +120,8 @@
               <span v-else-if="diag.fixed_code" class="tag tag-unverified">
                 修复未通过验证
               </span>
+              <span v-if="triageLabel" class="tag tag-triage">{{ triageLabel }}</span>
+              <span v-if="reviewBadge" class="tag" :class="reviewBadge.cls">{{ reviewBadge.text }}</span>
               <span
                 v-if="diag.case_sources && diag.case_sources.length"
                 class="tag tag-case"
@@ -150,6 +153,27 @@
               <button class="btn primary apply" :disabled="busy" @click="applyFix">
                 一键应用到编辑器,并重新运行
               </button>
+            </div>
+            <div v-if="reviewIssues.length" class="block review-block">
+              <div class="block-title">审查意见</div>
+              <ul class="review-list">
+                <li v-for="(issue, i) in reviewIssues" :key="i">{{ issue }}</li>
+              </ul>
+              <p v-if="diag.review && diag.review.overridden" class="review-hint">
+                这一版已通过真实运行,但审查还有疑虑 —— 先按上面的意见看看是否真的解决了你的问题。
+              </p>
+            </div>
+            <div v-if="attemptTrack.length" class="block">
+              <div class="block-title">修复轨迹</div>
+              <div class="round-track">
+                <div v-for="(a, i) in attemptTrack" :key="i" class="round-item">
+                  <i class="round-dot" :class="a.ok ? 'dot-ok' : 'dot-fail'"></i>
+                  <span class="round-name">
+                    第 {{ a.round }} 轮 · {{ attemptLabel(a) }}
+                  </span>
+                  <span v-if="a.error" class="round-err">{{ a.error }}</span>
+                </div>
+              </div>
             </div>
             <p v-if="diag.notice" class="notice">{{ diag.notice }}</p>
             <p v-if="diag.ai_error" class="notice warn">{{ diag.ai_error }}</p>
@@ -448,6 +472,58 @@ const aiStatusText = computed(() => {
   return 'AI 未配置 · 规则库模式'
 })
 
+// ---- 三 Agent(分诊 / 审查)展示 ----
+const CATEGORY_LABELS = {
+  syntax: '语法', logic: '逻辑', environment: '环境依赖', data: '数据', unknown: '未分类',
+}
+const STRATEGY_LABELS = {
+  minimal_fix: '最小改动', logic_rewrite: '重写逻辑', env_guide: '环境指引',
+}
+
+function triageText(t) {
+  if (!t || !t.error_category || t.source === 'fallback') return ''
+  const cat = CATEGORY_LABELS[t.error_category]
+  if (!cat) return ''
+  const strategy = STRATEGY_LABELS[t.repair_strategy]
+  return strategy ? `${cat} · ${strategy}` : cat
+}
+
+const triageLabel = computed(() => triageText((diag.value && diag.value.triage) || null))
+const streamTriageLabel = computed(() => triageText((stream.value && stream.value.triage) || null))
+
+const reviewBadge = computed(() => {
+  const r = (diag.value && diag.value.review) || null
+  if (!r || !r.verdict) return null
+  if (r.overridden) return { text: '审查有疑虑 · 已放行', cls: 'tag-review-warn' }
+  if (r.verdict === 'pass') return { text: '审查通过', cls: 'tag-review-pass' }
+  if (r.verdict === 'reject') return { text: '审查认为方案不可行', cls: 'tag-review-warn' }
+  return { text: '审查打回', cls: 'tag-review-warn' }
+})
+
+const reviewIssues = computed(() => {
+  const r = (diag.value && diag.value.review) || null
+  if (!r || !Array.isArray(r.issues)) return []
+  return r.issues.filter((x) => String(x || '').trim())
+})
+
+const attemptTrack = computed(() => {
+  const list = (diag.value && diag.value.attempts) || []
+  // 只有一条且通过时不显示,避免噪音;出现过审查打回则必须展示
+  if (list.length <= 1 && !list.some((a) => a && a.gate === 'critic')) return []
+  return list
+})
+
+function attemptLabel(a) {
+  if (!a) return ''
+  if (a.gate === 'critic') return '审查打回'
+  return a.ok ? '验证通过' : '验证未通过'
+}
+
+// 流式增量里模型偶尔会带上 markdown 围栏,渲染前先去掉
+function stripFence(text) {
+  return String(text || '').replace(/^```[A-Za-z0-9_+.\-]*\s*\n?/, '')
+}
+
 const caseSourceTitle = computed(() => {
   if (!diag.value || !diag.value.case_sources) return ''
   return diag.value.case_sources
@@ -529,6 +605,7 @@ function newStreamState() {
     stage: 'connect',
     msg: '正在连接诊断服务…',
     round: 1,
+    triage: null,
     activeField: '',
     explain: '',
     reason: '',
@@ -544,6 +621,7 @@ function applyStreamEvent(evt) {
   if (evt.type === 'status') {
     if (evt.msg) s.msg = evt.msg
     if (evt.stage) s.stage = evt.stage
+    if (evt.triage) s.triage = evt.triage
     const round = Number(evt.round || 0)
     if (round > s.round) {
       // 进入新一轮:上一轮诊断已被验证否决,清空重写
@@ -1032,6 +1110,21 @@ onMounted(async () => {
   color: var(--amber);
 }
 
+.tag-triage {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.tag-review-pass {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.tag-review-warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+}
+
 .verify-note {
   margin: 8px 0 0;
   font-family: var(--mono);
@@ -1043,6 +1136,53 @@ onMounted(async () => {
   color: var(--green);
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.diagnosis .block.review-block {
+  padding: 10px 12px;
+  background: #fffdf5;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+
+.review-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+.review-hint {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--amber);
+  line-height: 1.6;
+}
+
+.round-track {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.round-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.round-name {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
+.round-err {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status {

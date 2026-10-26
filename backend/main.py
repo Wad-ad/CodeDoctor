@@ -52,6 +52,7 @@ def health():
         "model": config.MODEL if config.API_KEY else None,
         "exec_timeout": config.EXEC_TIMEOUT,
         "kb_entries": len(kb.load_entries()),
+        "kb_mode": config.KB_MODE,
         "kb_backend": kb.backend_status(),
         "kb_cases": rag.stats(),
         "max_fix_rounds": config.MAX_FIX_ROUNDS,

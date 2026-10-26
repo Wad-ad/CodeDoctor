@@ -9,6 +9,7 @@
 """
 
 import json
+import re
 import time
 import urllib.request
 
@@ -122,8 +123,14 @@ def main():
             final_text = result_data.get(field) or ""
             if field == "fixed_code":
                 # 最终交付值经 strip_code_fence 规范化(去首尾空白/markdown 围栏);
-                # 流式增量是模型原文,同样规范化后比较(对用户可见内容无差异)
-                same = streamed_text.strip() == final_text.strip()
+                # 流式增量是模型原文,用同一规则规范化后再比(对用户可见的代码内容无差异)
+                def _clean(s):
+                    s = (s or "").strip()
+                    s = re.sub(r"^```[A-Za-z0-9_+.\-]*\s*\n?", "", s)
+                    s = re.sub(r"\n?```\s*$", "", s)
+                    return s.strip()
+
+                same = _clean(streamed_text) == _clean(final_text)
             else:
                 same = streamed_text == final_text
             print(f"  [{'ok' if same else 'FAIL'}] {field}: 流式拼接 {len(streamed_text)} 字符 vs 最终 {len(final_text)} 字符"
